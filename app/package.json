@@ -1,0 +1,17 @@
+{
+  "name": "observability-api",
+  "version": "1.0.0",
+  "description": "API Node.js monitorada com Prometheus e logs estruturados",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "load": "node ../scripts/incident2-cpu-load.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "prom-client": "^15.1.3",
+    "uuid": "^11.0.3"
+  }
+}
