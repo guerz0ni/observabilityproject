@@ -53,22 +53,90 @@ const serviceUp = new client.Gauge({
   registers: [register],
 });
 
+const httpRequestsInFlight = new client.Gauge({
+  name: 'http_requests_in_flight',
+  help: 'Requisições HTTP em processamento',
+  registers: [register],
+});
+
+const registeredUsersTotal = new client.Gauge({
+  name: 'registered_users_total',
+  help: 'Total de usuários cadastrados',
+  registers: [register],
+});
+
+const crudOperationsTotal = new client.Counter({
+  name: 'crud_operations_total',
+  help: 'Operações CRUD por tipo e resultado',
+  labelNames: ['operation', 'result'],
+  registers: [register],
+});
+
+const authAttemptsTotal = new client.Counter({
+  name: 'auth_attempts_total',
+  help: 'Tentativas de autenticação e cadastro',
+  labelNames: ['action', 'result', 'reason'],
+  registers: [register],
+});
+
+const httpClientErrorsTotal = new client.Counter({
+  name: 'http_client_errors_total',
+  help: 'Erros HTTP 4xx',
+  labelNames: ['method', 'route', 'status'],
+  registers: [register],
+});
+
+const httpServerErrorsTotal = new client.Counter({
+  name: 'http_server_errors_total',
+  help: 'Erros HTTP 5xx',
+  labelNames: ['method', 'route', 'status'],
+  registers: [register],
+});
+
+const slowRequestsTotal = new client.Counter({
+  name: 'slow_requests_total',
+  help: 'Requisições acima do limiar de latência',
+  labelNames: ['method', 'route'],
+  registers: [register],
+});
+
+const logEventsTotal = new client.Counter({
+  name: 'log_events_total',
+  help: 'Eventos de log emitidos pela aplicação',
+  labelNames: ['level', 'event_type'],
+  registers: [register],
+});
+
 serviceUp.set(1);
 
-//logs estruturados 
+const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS) || 1000;
+
+function syncUsersGauge() {
+  registeredUsersTotal.set(users.size);
+}
+
+// Logs estruturados com correlação (requestId) e categorização (event_type)
 function log(level, message, meta = {}) {
+  const { event_type = 'system', request_id, ...rest } = meta;
   const entry = {
     timestamp: new Date().toISOString(),
     level,
     message,
+    event_type,
     service: 'observability-api',
-    ...meta,
+    ...(request_id ? { request_id } : {}),
+    ...rest,
   };
+  logEventsTotal.inc({ level, event_type });
   if (level === 'error') {
     console.error(JSON.stringify(entry));
   } else {
     console.log(JSON.stringify(entry));
   }
+}
+
+function logFromReq(req, level, message, meta = {}) {
+  log(level, message, { request_id: req.requestId, ...meta });
 }
 
 //armazenamento em memória
@@ -108,13 +176,15 @@ async function loadUsersFromFile() {
         createdAt: u.createdAt,
       });
     }
+    syncUsersGauge();
     return users.size;
   } catch (err) {
     if (err && err.code === 'ENOENT') {
       await fs.writeFile(USERS_FILE, JSON.stringify({ users: [] }, null, 2), 'utf-8');
+      syncUsersGauge();
       return 0;
     }
-    log('error', 'users_load_failed', { error: err?.message });
+    log('error', 'users_load_failed', { event_type: 'persistence', error: err?.message });
     return 0;
   }
 }
@@ -127,7 +197,7 @@ async function persistUsersToFile() {
       await fs.writeFile(USERS_FILE, JSON.stringify(payload, null, 2), 'utf-8');
     })
     .catch((err) => {
-      log('error', 'users_persist_failed', { error: err?.message });
+      log('error', 'users_persist_failed', { event_type: 'persistence', error: err?.message });
     });
 
   return usersPersistQueue;
@@ -136,30 +206,72 @@ async function persistUsersToFile() {
 // estado para simulação de incidentes
 let errorStormActive = false;
 let instabilityMode = false;
+let requestsInFlightCount = 0;
 
-// middleware
+// Correlação de logs por requisição
+app.use((req, res, next) => {
+  req.requestId = req.headers['x-request-id'] || uuidv4();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
+
+// Middleware de métricas e logs HTTP
 app.use((req, res, next) => {
   const start = Date.now();
+  httpRequestsInFlight.inc();
+  requestsInFlightCount += 1;
+
   res.on('finish', () => {
-    const duration = (Date.now() - start) / 1000;
+    httpRequestsInFlight.dec();
+    requestsInFlightCount -= 1;
+    const durationMs = Date.now() - start;
+    const duration = durationMs / 1000;
     const route = req.route?.path || req.path;
-    const labels = { method: req.method, route, status: String(res.statusCode) };
+    const status = res.statusCode;
+    const labels = { method: req.method, route, status: String(status) };
+
     httpRequestsTotal.inc(labels);
     httpRequestDuration.observe(labels, duration);
-    log('info', 'request_completed', {
+
+    if (status >= 400 && status < 500) {
+      httpClientErrorsTotal.inc(labels);
+    }
+    if (status >= 500) {
+      httpServerErrorsTotal.inc(labels);
+    }
+    if (durationMs >= SLOW_REQUEST_MS) {
+      slowRequestsTotal.inc({ method: req.method, route });
+      logFromReq(req, 'warn', 'slow_request', {
+        event_type: 'http',
+        method: req.method,
+        path: req.originalUrl,
+        status,
+        duration_ms: durationMs,
+        threshold_ms: SLOW_REQUEST_MS,
+      });
+    }
+
+    logFromReq(req, 'info', 'request_completed', {
+      event_type: 'http',
       method: req.method,
       path: req.originalUrl,
-      status: res.statusCode,
-      duration_ms: Date.now() - start,
+      status,
+      duration_ms: durationMs,
       ip: req.ip,
     });
   });
+
   next();
 });
 
 //rotas de saúde e métricas 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    users: users.size,
+    requests_in_flight: requestsInFlightCount,
+  });
 });
 
 app.get('/metrics', async (_req, res) => {
@@ -172,9 +284,15 @@ app.post('/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password) {
+      authAttemptsTotal.inc({ action: 'register', result: 'failure', reason: 'validation' });
+      crudOperationsTotal.inc({ operation: 'create', result: 'error' });
+      logFromReq(req, 'warn', 'register_validation_failed', { event_type: 'auth', email: email || 'unknown' });
       return res.status(400).json({ error: 'email e password são obrigatórios' });
     }
     if (users.has(email)) {
+      authAttemptsTotal.inc({ action: 'register', result: 'failure', reason: 'duplicate' });
+      crudOperationsTotal.inc({ operation: 'create', result: 'error' });
+      logFromReq(req, 'warn', 'register_duplicate', { event_type: 'auth', email });
       return res.status(409).json({ error: 'usuário já existe' });
     }
     const hash = await bcrypt.hash(password, 10);
@@ -187,7 +305,10 @@ app.post('/register', async (req, res) => {
     };
     users.set(email, user);
     await persistUsersToFile();
-    log('info', 'user_registered', { userId: user.id, email });
+    syncUsersGauge();
+    authAttemptsTotal.inc({ action: 'register', result: 'success', reason: 'none' });
+    crudOperationsTotal.inc({ operation: 'create', result: 'success' });
+    logFromReq(req, 'info', 'user_registered', { event_type: 'crud', userId: user.id, email });
     res.status(201).json({
       id: user.id,
       email: user.email,
@@ -196,7 +317,8 @@ app.post('/register', async (req, res) => {
     });
   } catch (err) {
     applicationErrorsTotal.inc({ route: '/register', type: 'unhandled' });
-    log('error', 'register_failed', { error: err.message });
+    crudOperationsTotal.inc({ operation: 'create', result: 'error' });
+    logFromReq(req, 'error', 'register_failed', { event_type: 'crud', error: err.message });
     res.status(500).json({ error: 'falha no cadastro' });
   }
 });
@@ -207,38 +329,44 @@ app.post('/login', async (req, res) => {
   if (errorStormActive || SIMULATE_ERROR_STORM) {
     loginErrorsTotal.inc({ reason: 'simulated_storm' });
     applicationErrorsTotal.inc({ route: '/login', type: 'simulated_500' });
-    log('error', 'login_failed_simulated_storm', { email: email || 'unknown' });
+    authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'simulated_storm' });
+    logFromReq(req, 'error', 'login_failed_simulated_storm', { event_type: 'auth', email: email || 'unknown' });
     return res.status(500).json({ error: 'falha interna simulada no login' });
   }
 
   try {
     if (!email || !password) {
       loginErrorsTotal.inc({ reason: 'missing_fields' });
-      log('error', 'login_failed', { reason: 'missing_fields', email: email || 'unknown' });
+      authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'missing_fields' });
+      logFromReq(req, 'error', 'login_failed', { event_type: 'auth', reason: 'missing_fields', email: email || 'unknown' });
       return res.status(400).json({ error: 'email e password são obrigatórios' });
     }
 
     const user = users.get(email);
     if (!user) {
       loginErrorsTotal.inc({ reason: 'user_not_found' });
-      log('error', 'login_failed', { reason: 'user_not_found', email });
+      authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'user_not_found' });
+      logFromReq(req, 'error', 'login_failed', { event_type: 'auth', reason: 'user_not_found', email });
       return res.status(401).json({ error: 'credenciais inválidas' });
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       loginErrorsTotal.inc({ reason: 'invalid_password' });
-      log('error', 'login_failed', { reason: 'invalid_password', email });
+      authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'invalid_password' });
+      logFromReq(req, 'error', 'login_failed', { event_type: 'auth', reason: 'invalid_password', email });
       return res.status(401).json({ error: 'credenciais inválidas' });
     }
 
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
-    log('info', 'login_success', { userId: user.id, email });
+    authAttemptsTotal.inc({ action: 'login', result: 'success', reason: 'none' });
+    logFromReq(req, 'info', 'login_success', { event_type: 'auth', userId: user.id, email });
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     loginErrorsTotal.inc({ reason: 'server_error' });
     applicationErrorsTotal.inc({ route: '/login', type: 'unhandled' });
-    log('error', 'login_failed', { reason: 'server_error', error: err.message, email });
+    authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'server_error' });
+    logFromReq(req, 'error', 'login_failed', { event_type: 'auth', reason: 'server_error', error: err.message, email });
     res.status(500).json({ error: 'erro interno no login' });
   }
 });
@@ -246,23 +374,29 @@ app.post('/login', async (req, res) => {
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
+    authAttemptsTotal.inc({ action: 'token', result: 'failure', reason: 'missing' });
+    logFromReq(req, 'warn', 'auth_denied', { event_type: 'security', reason: 'token_missing' });
     return res.status(401).json({ error: 'token ausente' });
   }
   try {
     req.user = jwt.verify(header.slice(7), JWT_SECRET);
     next();
   } catch {
+    authAttemptsTotal.inc({ action: 'token', result: 'failure', reason: 'invalid' });
+    logFromReq(req, 'warn', 'auth_denied', { event_type: 'security', reason: 'token_invalid' });
     return res.status(401).json({ error: 'token inválido' });
   }
 }
 
-app.get('/users', authMiddleware, (_req, res) => {
+app.get('/users', authMiddleware, (req, res) => {
   const list = [...users.values()].map((u) => ({
     id: u.id,
     email: u.email,
     name: u.name,
     createdAt: u.createdAt,
   }));
+  crudOperationsTotal.inc({ operation: 'read', result: 'success' });
+  logFromReq(req, 'info', 'users_listed', { event_type: 'crud', count: list.length });
   res.json(list);
 });
 
@@ -272,6 +406,8 @@ app.put('/users/:id', authMiddleware, async (req, res) => {
     const { name, password } = req.body;
     const entry = [...users.entries()].find(([, u]) => u.id === id);
     if (!entry) {
+      crudOperationsTotal.inc({ operation: 'update', result: 'error' });
+      logFromReq(req, 'warn', 'user_not_found', { event_type: 'crud', userId: id });
       return res.status(404).json({ error: 'usuário não encontrado' });
     }
     const [email, user] = entry;
@@ -279,11 +415,13 @@ app.put('/users/:id', authMiddleware, async (req, res) => {
     if (password) user.passwordHash = await bcrypt.hash(password, 10);
     users.set(email, user);
     await persistUsersToFile();
-    log('info', 'user_updated', { userId: id });
+    crudOperationsTotal.inc({ operation: 'update', result: 'success' });
+    logFromReq(req, 'info', 'user_updated', { event_type: 'crud', userId: id });
     res.json({ id: user.id, email: user.email, name: user.name });
   } catch (err) {
     applicationErrorsTotal.inc({ route: '/users/:id', type: 'unhandled' });
-    log('error', 'user_update_failed', { error: err.message });
+    crudOperationsTotal.inc({ operation: 'update', result: 'error' });
+    logFromReq(req, 'error', 'user_update_failed', { event_type: 'crud', error: err.message });
     res.status(500).json({ error: 'falha ao atualizar usuário' });
   }
 });
@@ -294,10 +432,14 @@ app.delete('/users/:id', authMiddleware, async (req, res) => {
     if (user.id === id) {
       users.delete(email);
       await persistUsersToFile();
-      log('info', 'user_deleted', { userId: id });
+      syncUsersGauge();
+      crudOperationsTotal.inc({ operation: 'delete', result: 'success' });
+      logFromReq(req, 'info', 'user_deleted', { event_type: 'crud', userId: id });
       return res.status(204).send();
     }
   }
+  crudOperationsTotal.inc({ operation: 'delete', result: 'error' });
+  logFromReq(req, 'warn', 'user_not_found', { event_type: 'crud', userId: id });
   res.status(404).json({ error: 'usuário não encontrado' });
 });
 
@@ -305,18 +447,18 @@ app.delete('/users/:id', authMiddleware, async (req, res) => {
 app.post('/incidents/error-storm/start', (req, res) => {
   const count = Math.min(Number(req.body?.count) || 50, 500);
   errorStormActive = true;
-  log('warn', 'incident_started', { incident: 'error_storm', count });
+  logFromReq(req, 'warn', 'incident_started', { event_type: 'incident', incident: 'error_storm', count });
   res.json({ message: 'Incidente 1 ativado: logins retornarão HTTP 500', count });
 
   setTimeout(() => {
     errorStormActive = false;
-    log('info', 'incident_stopped', { incident: 'error_storm' });
+    log('info', 'incident_stopped', { event_type: 'incident', incident: 'error_storm' });
   }, 120_000);
 });
 
 app.post('/incidents/error-storm/stop', (_req, res) => {
   errorStormActive = false;
-  log('info', 'incident_stopped', { incident: 'error_storm', manual: true });
+  logFromReq(_req, 'info', 'incident_stopped', { event_type: 'incident', incident: 'error_storm', manual: true });
   res.json({ message: 'Incidente 1 desativado' });
 });
 
@@ -343,50 +485,61 @@ app.post('/incidents/error-storm/trigger', async (req, res) => {
 app.get('/incidents/instability', async (req, res) => {
   instabilityMode = true;
   const iterations = Math.min(Number(req.query.iterations) || 5, 20);
-  log('warn', 'incident_started', { incident: 'instability', iterations });
+  logFromReq(req, 'warn', 'incident_started', { event_type: 'incident', incident: 'instability', iterations });
 
   for (let i = 0; i < iterations; i++) {
     const delay = 500 + Math.random() * 4000;
     const shouldTimeout = Math.random() > 0.5;
-    log('warn', 'instability_event', { iteration: i + 1, delay_ms: delay, timeout: shouldTimeout });
+    logFromReq(req, 'warn', 'instability_event', {
+      event_type: 'incident',
+      iteration: i + 1,
+      delay_ms: delay,
+      timeout: shouldTimeout,
+    });
 
     await new Promise((r) => setTimeout(r, delay));
 
     if (shouldTimeout && !req.query.skipTimeout) {
-      log('error', 'instability_timeout', { iteration: i + 1 });
+      logFromReq(req, 'error', 'instability_timeout', { event_type: 'incident', iteration: i + 1 });
       applicationErrorsTotal.inc({ route: '/incidents/instability', type: 'timeout' });
       return res.status(504).json({ error: 'timeout simulado', iteration: i + 1 });
     }
   }
 
   instabilityMode = false;
-  log('info', 'incident_completed', { incident: 'instability' });
+  logFromReq(req, 'info', 'incident_completed', { event_type: 'incident', incident: 'instability' });
   res.json({ message: 'Incidente 3 concluído com delays intermitentes', iterations });
 });
 
 app.get('/incidents/cpu-burn', (req, res) => {
   const durationMs = Math.min(Number(req.query.durationMs) || 15000, 60000);
   const end = Date.now() + durationMs;
-  log('warn', 'incident_started', { incident: 'cpu_burn', durationMs });
+  logFromReq(req, 'warn', 'incident_started', { event_type: 'incident', incident: 'cpu_burn', durationMs });
   while (Date.now() < end) {
     Math.sqrt(Math.random() * 1e6);
   }
-  log('info', 'incident_completed', { incident: 'cpu_burn' });
+  logFromReq(req, 'info', 'incident_completed', { event_type: 'incident', incident: 'cpu_burn' });
   res.json({ message: `CPU burn por ${durationMs}ms concluído` });
 });
 
 // handler de erros
 app.use((err, req, res, _next) => {
   applicationErrorsTotal.inc({ route: req.path, type: 'middleware' });
-  log('error', 'unhandled_error', { path: req.path, error: err.message, stack: err.stack });
+  logFromReq(req, 'error', 'unhandled_error', {
+    event_type: 'system',
+    path: req.path,
+    error: err.message,
+    stack: err.stack,
+  });
   res.status(500).json({ error: 'erro interno' });
 });
 
 (async () => {
   const count = await loadUsersFromFile();
-  log('info', 'users_loaded', { count, file: USERS_FILE });
+  syncUsersGauge();
+  log('info', 'users_loaded', { event_type: 'system', count, file: USERS_FILE });
 
   app.listen(PORT, () => {
-    log('info', 'system_startup', { port: PORT, nodeVersion: process.version });
+    log('info', 'system_startup', { event_type: 'system', port: PORT, nodeVersion: process.version });
   });
 })();

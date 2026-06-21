@@ -469,7 +469,7 @@
       },
       "targets": [
         {
-          "expr": "{service=~\"api|observability-api\"} | json | line_format \"{{.timestamp}} | {{.level}} | {{.message}} | {{.method}} {{.path}} {{.status}}\"",
+          "expr": "{service=~\"api|observability-api\"} | json | line_format \"{{.timestamp}} | {{.request_id}} | {{.level}} | {{.event_type}} | {{.message}} | {{.method}} {{.path}} {{.status}}\"",
           "refId": "A"
         }
       ],
@@ -836,6 +836,159 @@
       ],
       "title": "Volume de Logs de Erro",
       "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "id": 400,
+      "panels": [],
+      "title": "MONITORAMENTO APRIMORADO — Métricas e Logs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 37 },
+      "id": 401,
+      "targets": [
+        {
+          "expr": "sum(rate(crud_operations_total[5m])) by (operation)",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Operações CRUD / min",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 37 },
+      "id": 402,
+      "targets": [
+        {
+          "expr": "sum(rate(auth_attempts_total{result=\"success\"}[5m]))",
+          "legendFormat": "sucesso",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(auth_attempts_total{result=\"failure\"}[5m]))",
+          "legendFormat": "falha",
+          "refId": "B"
+        }
+      ],
+      "title": "Autenticação (sucesso vs falha)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 37 },
+      "id": 403,
+      "targets": [
+        {
+          "expr": "sum(rate(http_client_errors_total[5m]))",
+          "legendFormat": "4xx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_server_errors_total[5m]))",
+          "legendFormat": "5xx",
+          "refId": "B"
+        }
+      ],
+      "title": "Erros HTTP 4xx vs 5xx",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 37 },
+      "id": 404,
+      "targets": [
+        {
+          "expr": "sum(rate(slow_requests_total[5m]))",
+          "legendFormat": "requisições lentas",
+          "refId": "A"
+        },
+        {
+          "expr": "http_requests_in_flight",
+          "legendFormat": "em processamento",
+          "refId": "B"
+        }
+      ],
+      "title": "Requisições Lentas e In-Flight",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 44 },
+      "id": 405,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "registered_users_total",
+          "legendFormat": "usuários",
+          "refId": "A"
+        }
+      ],
+      "title": "Usuários Cadastrados",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 44 },
+      "id": 406,
+      "targets": [
+        {
+          "expr": "sum by (level) (count_over_time({service=~\"api|observability-api\"} | json [1m]))",
+          "legendFormat": "{{level}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs por Nível (info/warn/error)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 44 },
+      "id": 407,
+      "targets": [
+        {
+          "expr": "sum by (event_type) (count_over_time({service=~\"api|observability-api\"} | json [1m]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs por Tipo de Evento",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 50 },
+      "id": 408,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"api|observability-api\", event_type=~\"auth|crud|security|incident\"} | json | line_format \"{{.request_id}} | {{.level}} | {{.event_type}} | {{.message}}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs de Negócio (auth, crud, security, incident)",
+      "type": "logs"
     }
   ],
   "refresh": "10s",
@@ -856,5 +1009,5 @@
   "timezone": "browser",
   "title": "Observabilidade — API Node.js",
   "uid": "obs-node-api",
-  "version": 2
+  "version": 3
 }

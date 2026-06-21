@@ -27,9 +27,12 @@ scrape_configs:
             level: level
             message: message
             service: service
+            event_type: event_type
+            request_id: request_id
       - labels:
           level:
           service:
+          event_type:
 
   - job_name: api-logs-file
     static_configs:
