@@ -1,7 +1,7 @@
 {
-  "name": "observability-api",
-  "version": "1.0.0",
-  "description": "API Node.js monitorada com Prometheus e logs estruturados",
+  "name": "ecommerce-api",
+  "version": "2.0.0",
+  "description": "API E-commerce monitorada com Prometheus e logs estruturados",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",

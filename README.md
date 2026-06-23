@@ -1,67 +1,61 @@
-# Observabilidade — API Node.js
+# Observabilidade — E-commerce API
 
-Ambiente de observabilidade com Docker para monitorar uma API Node.js: métricas (Prometheus), logs (Loki) e dashboards (Grafana).
+API de e-commerce monitorada com Docker: Prometheus (métricas), Loki (logs) e Grafana (dashboards).
 
 ## Stack
 
 | Serviço | Função |
 |---------|--------|
-| API Node.js | Aplicação monitorada |
+| API Node.js (E-commerce) | Aplicação monitorada |
 | Prometheus | Coleta de métricas |
-| Node Exporter | Métricas de CPU, memória e rede |
+| Node Exporter | CPU, memória e rede |
 | Loki | Armazenamento de logs |
 | Promtail | Envio de logs ao Loki |
-| Grafana | Visualização e dashboards |
+| Grafana | Dashboards |
 
-## API
+## E-commerce
 
-- CRUD de usuários (`POST /register`, `GET /users`, `PUT /users/:id`, `DELETE /users/:id`)
-- Login com JWT (`POST /login`)
-- Persistência de usuários em arquivo JSON (volume Docker)
-- Logs estruturados em JSON (`console.log` / `console.error`)
-- Métricas Prometheus em `/metrics`
-- Health check em `/health`
+Fluxo típico de loja online:
 
-## Monitoramento aprimorado (métricas e logs)
+1. **Cadastro/login** — cliente autenticado
+2. **Catálogo** — listar produtos
+3. **Carrinho** — adicionar/remover itens
+4. **Checkout** — criar pedido (`POST /orders`)
+5. **Pedidos** — consultar histórico
 
-### Métricas adicionais
+### Endpoints
 
-| Métrica | Descrição |
-|---------|-----------|
-| `crud_operations_total` | Operações create/read/update/delete |
-| `auth_attempts_total` | Tentativas de login/registro/token |
-| `http_client_errors_total` | Erros HTTP 4xx |
-| `http_server_errors_total` | Erros HTTP 5xx |
-| `slow_requests_total` | Requisições acima de 1s |
-| `http_requests_in_flight` | Requisições em processamento |
-| `registered_users_total` | Total de usuários cadastrados |
-| `log_events_total` | Contagem de eventos de log por nível/tipo |
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/register` | Não | Cadastro |
+| POST | `/login` | Não | Login JWT |
+| GET/PUT/DELETE | `/users` | Sim | CRUD usuários |
+| GET | `/products` | Não | Catálogo |
+| GET | `/products/:id` | Não | Detalhe do produto |
+| GET | `/cart` | Sim | Ver carrinho |
+| POST | `/cart/items` | Sim | Adicionar ao carrinho |
+| DELETE | `/cart/items/:id` | Sim | Remover item |
+| DELETE | `/cart` | Sim | Limpar carrinho |
+| POST | `/orders` | Sim | Checkout |
+| GET | `/orders` | Sim | Listar pedidos |
+| GET | `/orders/:id` | Sim | Detalhe do pedido |
 
-### Logs aprimorados
+Persistência em JSON: `users.json`, `products.json`, `orders.json`, `carts.json` (volume Docker).
 
-- **`request_id`**: correlação por requisição (header `X-Request-Id`)
-- **`event_type`**: `http`, `auth`, `crud`, `security`, `incident`, `system`, `persistence`
-- Eventos: `slow_request`, `auth_denied`, `users_listed`, falhas de validação, etc.
+## Monitoramento
 
-### Dashboard
+**Métricas de negócio:** `orders_created_total`, `checkout_failures_total`, `cart_additions_total`, `order_value_reais`, `active_carts_total`, `products_in_stock_total`.
 
-Bloco **MONITORAMENTO APRIMORADO** com painéis de CRUD, autenticação, 4xx/5xx, requisições lentas, logs por nível e por tipo de evento.
+**Logs:** `event_type: ecommerce` — `cart_item_added`, `checkout_started`, `order_created`, `checkout_failed`, etc.
 
-## Observabilidade
+**Dashboard:** blocos Infraestrutura, Aplicação, Incidentes, Monitoramento Aprimorado e **E-commerce**.
 
-**Métricas:** requisições HTTP, latência, erros de login, erros da aplicação, disponibilidade (`service_up`), CPU, memória e rede.
+## Incidentes
 
-**Logs:** requisições, falhas de login, erros da aplicação e eventos de sistema/incidentes.
-
-**Dashboard Grafana:** resumo executivo, infraestrutura, aplicação (inclui taxa de erro em %), incidentes e monitoramento aprimorado.
-
-## Simulação de incidentes
-
-1. **Alta taxa de erro** — logins retornando HTTP 500  
-2. **Sobrecarga** — aumento de CPU via requisições pesadas  
-3. **Instabilidade** — delays, timeouts e logs intermitentes  
-
-Scripts em `scripts/` e rotas em `/incidents/*`.
+1. Erros 500 no login  
+2. Sobrecarga de CPU  
+3. Instabilidade (timeout/delay)  
+4. **Falha de pagamento** — `POST /incidents/payment-storm/start` (checkout 500)
 
 ## Portas
 
@@ -71,7 +65,6 @@ Scripts em `scripts/` e rotas em `/incidents/*`.
 | Grafana | 3001 |
 | Prometheus | 9090 |
 | Loki | 3100 |
-| Node Exporter | 9100 |
 
 ## Tecnologias
 

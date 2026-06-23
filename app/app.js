@@ -10,6 +10,10 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'observability-demo-secret';
 const SIMULATE_ERROR_STORM = process.env.SIMULATE_ERROR_STORM === 'true';
 const USERS_FILE = process.env.USERS_FILE || '/app/data/users.json';
+const DATA_DIR = path.dirname(USERS_FILE);
+const PRODUCTS_FILE = process.env.PRODUCTS_FILE || path.join(DATA_DIR, 'products.json');
+const ORDERS_FILE = process.env.ORDERS_FILE || path.join(DATA_DIR, 'orders.json');
+const CARTS_FILE = process.env.CARTS_FILE || path.join(DATA_DIR, 'carts.json');
 
 const app = express();
 app.use(express.json());
@@ -107,6 +111,45 @@ const logEventsTotal = new client.Counter({
   registers: [register],
 });
 
+const ordersCreatedTotal = new client.Counter({
+  name: 'orders_created_total',
+  help: 'Pedidos criados no e-commerce',
+  labelNames: ['status'],
+  registers: [register],
+});
+
+const checkoutFailuresTotal = new client.Counter({
+  name: 'checkout_failures_total',
+  help: 'Falhas no checkout',
+  labelNames: ['reason'],
+  registers: [register],
+});
+
+const cartAdditionsTotal = new client.Counter({
+  name: 'cart_additions_total',
+  help: 'Itens adicionados ao carrinho',
+  registers: [register],
+});
+
+const orderValueReais = new client.Histogram({
+  name: 'order_value_reais',
+  help: 'Valor dos pedidos em reais',
+  buckets: [50, 100, 200, 500, 1000, 2000, 5000, 10000],
+  registers: [register],
+});
+
+const activeCartsGauge = new client.Gauge({
+  name: 'active_carts_total',
+  help: 'Carrinhos com pelo menos um item',
+  registers: [register],
+});
+
+const productsStockGauge = new client.Gauge({
+  name: 'products_in_stock_total',
+  help: 'Unidades totais em estoque',
+  registers: [register],
+});
+
 serviceUp.set(1);
 
 const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS) || 1000;
@@ -123,7 +166,8 @@ function log(level, message, meta = {}) {
     level,
     message,
     event_type,
-    service: 'observability-api',
+    service: 'ecommerce-api',
+    domain: 'ecommerce',
     ...(request_id ? { request_id } : {}),
     ...rest,
   };
@@ -139,11 +183,89 @@ function logFromReq(req, level, message, meta = {}) {
   log(level, message, { request_id: req.requestId, ...meta });
 }
 
-//armazenamento em memória
+// Armazenamento
 const users = new Map();
+const products = new Map();
+const orders = [];
+const carts = new Map(); // userId -> { items: [] }
+
+const DEFAULT_PRODUCTS = [
+  { id: 'p1', name: 'Notebook Pro 15"', price: 4299.9, stock: 25, category: 'eletronicos' },
+  { id: 'p2', name: 'Mouse Gamer RGB', price: 189.9, stock: 150, category: 'eletronicos' },
+  { id: 'p3', name: 'Teclado Mecânico', price: 349.9, stock: 80, category: 'eletronicos' },
+  { id: 'p4', name: 'Camiseta Premium', price: 89.9, stock: 200, category: 'moda' },
+  { id: 'p5', name: 'Tênis Esportivo', price: 299.9, stock: 60, category: 'moda' },
+  { id: 'p6', name: 'Fone Bluetooth', price: 249.9, stock: 100, category: 'eletronicos' },
+];
 
 const usersDir = path.dirname(USERS_FILE);
-let usersPersistQueue = Promise.resolve();
+let persistQueue = Promise.resolve();
+
+async function loadJsonFile(filePath, fallback) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), 'utf-8');
+      return fallback;
+    }
+    throw err;
+  }
+}
+
+async function saveJsonFile(filePath, data) {
+  persistQueue = persistQueue
+    .then(async () => {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    })
+    .catch((err) => {
+      log('error', 'persist_failed', { event_type: 'persistence', file: filePath, error: err?.message });
+    });
+  return persistQueue;
+}
+
+function syncEcommerceGauges() {
+  let stock = 0;
+  for (const p of products.values()) stock += p.stock;
+  productsStockGauge.set(stock);
+
+  let active = 0;
+  for (const cart of carts.values()) {
+    if (cart.items?.length > 0) active += 1;
+  }
+  activeCartsGauge.set(active);
+}
+
+function getCart(userId) {
+  if (!carts.has(userId)) {
+    carts.set(userId, { items: [] });
+  }
+  return carts.get(userId);
+}
+
+function cartTotal(cart) {
+  return cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+}
+
+async function persistCarts() {
+  const payload = Object.fromEntries(
+    [...carts.entries()].map(([userId, cart]) => [userId, cart])
+  );
+  await saveJsonFile(CARTS_FILE, payload);
+  syncEcommerceGauges();
+}
+
+async function persistOrders() {
+  await saveJsonFile(ORDERS_FILE, { orders });
+}
+
+async function persistProducts() {
+  await saveJsonFile(PRODUCTS_FILE, { products: [...products.values()] });
+  syncEcommerceGauges();
+}
 
 function serializeUsers() {
   return {
@@ -190,21 +312,47 @@ async function loadUsersFromFile() {
 }
 
 async function persistUsersToFile() {
-  usersPersistQueue = usersPersistQueue
+  persistQueue = persistQueue
     .then(async () => {
       await fs.mkdir(usersDir, { recursive: true });
-      const payload = serializeUsers();
-      await fs.writeFile(USERS_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+      await fs.writeFile(USERS_FILE, JSON.stringify(serializeUsers(), null, 2), 'utf-8');
     })
     .catch((err) => {
       log('error', 'users_persist_failed', { event_type: 'persistence', error: err?.message });
     });
+  return persistQueue;
+}
 
-  return usersPersistQueue;
+async function loadProductsFromFile() {
+  const data = await loadJsonFile(PRODUCTS_FILE, { products: DEFAULT_PRODUCTS });
+  const arr = data?.products?.length ? data.products : DEFAULT_PRODUCTS;
+  products.clear();
+  for (const p of arr) products.set(p.id, { ...p });
+  if (!data?.products?.length) await persistProducts();
+  syncEcommerceGauges();
+  return products.size;
+}
+
+async function loadOrdersFromFile() {
+  const data = await loadJsonFile(ORDERS_FILE, { orders: [] });
+  orders.length = 0;
+  for (const o of data.orders || []) orders.push(o);
+  return orders.length;
+}
+
+async function loadCartsFromFile() {
+  const data = await loadJsonFile(CARTS_FILE, {});
+  carts.clear();
+  for (const [userId, cart] of Object.entries(data)) {
+    carts.set(userId, cart);
+  }
+  syncEcommerceGauges();
+  return carts.size;
 }
 
 // estado para simulação de incidentes
 let errorStormActive = false;
+let paymentStormActive = false;
 let instabilityMode = false;
 let requestsInFlightCount = 0;
 
@@ -266,10 +414,18 @@ app.use((req, res, next) => {
 
 //rotas de saúde e métricas 
 app.get('/health', (_req, res) => {
+  let activeCarts = 0;
+  for (const cart of carts.values()) {
+    if (cart.items?.length > 0) activeCarts += 1;
+  }
   res.json({
     status: 'ok',
+    domain: 'ecommerce',
     uptime: process.uptime(),
     users: users.size,
+    products: products.size,
+    orders: orders.length,
+    active_carts: activeCarts,
     requests_in_flight: requestsInFlightCount,
   });
 });
@@ -443,7 +599,214 @@ app.delete('/users/:id', authMiddleware, async (req, res) => {
   res.status(404).json({ error: 'usuário não encontrado' });
 });
 
+// --- E-commerce: catálogo, carrinho e pedidos ---
+
+app.get('/products', (req, res) => {
+  const list = [...products.values()].map(({ id, name, price, stock, category }) => ({
+    id, name, price, stock, category,
+  }));
+  logFromReq(req, 'info', 'catalog_viewed', { event_type: 'ecommerce', count: list.length });
+  res.json(list);
+});
+
+app.get('/products/:id', (req, res) => {
+  const product = products.get(req.params.id);
+  if (!product) {
+    logFromReq(req, 'warn', 'product_not_found', { event_type: 'ecommerce', productId: req.params.id });
+    return res.status(404).json({ error: 'produto não encontrado' });
+  }
+  logFromReq(req, 'info', 'product_viewed', { event_type: 'ecommerce', productId: product.id, name: product.name });
+  res.json({ id: product.id, name: product.name, price: product.price, stock: product.stock, category: product.category });
+});
+
+app.get('/cart', authMiddleware, (req, res) => {
+  const cart = getCart(req.user.sub);
+  const total = cartTotal(cart);
+  logFromReq(req, 'info', 'cart_viewed', { event_type: 'ecommerce', userId: req.user.sub, items: cart.items.length, total });
+  res.json({ items: cart.items, total, itemCount: cart.items.length });
+});
+
+app.post('/cart/items', authMiddleware, async (req, res) => {
+  const { productId, quantity = 1 } = req.body;
+  const qty = Math.max(1, Math.min(Number(quantity) || 1, 99));
+  const product = products.get(productId);
+
+  if (!product) {
+    checkoutFailuresTotal.inc({ reason: 'product_not_found' });
+    logFromReq(req, 'warn', 'cart_add_failed', { event_type: 'ecommerce', reason: 'product_not_found', productId });
+    return res.status(404).json({ error: 'produto não encontrado' });
+  }
+  if (product.stock < qty) {
+    checkoutFailuresTotal.inc({ reason: 'insufficient_stock' });
+    logFromReq(req, 'warn', 'cart_add_failed', { event_type: 'ecommerce', reason: 'insufficient_stock', productId, stock: product.stock });
+    return res.status(409).json({ error: 'estoque insuficiente', available: product.stock });
+  }
+
+  const cart = getCart(req.user.sub);
+  const existing = cart.items.find((i) => i.productId === productId);
+  if (existing) {
+    existing.quantity += qty;
+  } else {
+    cart.items.push({ productId, name: product.name, price: product.price, quantity: qty });
+  }
+  cartAdditionsTotal.inc();
+  await persistCarts();
+  logFromReq(req, 'info', 'cart_item_added', {
+    event_type: 'ecommerce',
+    userId: req.user.sub,
+    productId,
+    quantity: qty,
+    cartTotal: cartTotal(cart),
+  });
+  res.status(201).json({ items: cart.items, total: cartTotal(cart) });
+});
+
+app.delete('/cart/items/:productId', authMiddleware, async (req, res) => {
+  const cart = getCart(req.user.sub);
+  const before = cart.items.length;
+  cart.items = cart.items.filter((i) => i.productId !== req.params.productId);
+  if (cart.items.length === before) {
+    return res.status(404).json({ error: 'item não está no carrinho' });
+  }
+  await persistCarts();
+  logFromReq(req, 'info', 'cart_item_removed', { event_type: 'ecommerce', productId: req.params.productId });
+  res.json({ items: cart.items, total: cartTotal(cart) });
+});
+
+app.delete('/cart', authMiddleware, async (req, res) => {
+  carts.set(req.user.sub, { items: [] });
+  await persistCarts();
+  logFromReq(req, 'info', 'cart_cleared', { event_type: 'ecommerce', userId: req.user.sub });
+  res.status(204).send();
+});
+
+app.post('/orders', authMiddleware, async (req, res) => {
+  const cart = getCart(req.user.sub);
+
+  if (paymentStormActive) {
+    checkoutFailuresTotal.inc({ reason: 'payment_storm' });
+    applicationErrorsTotal.inc({ route: '/orders', type: 'payment_storm' });
+    logFromReq(req, 'error', 'checkout_failed', { event_type: 'ecommerce', reason: 'payment_storm', userId: req.user.sub });
+    return res.status(500).json({ error: 'falha simulada no pagamento' });
+  }
+
+  if (!cart.items.length) {
+    checkoutFailuresTotal.inc({ reason: 'empty_cart' });
+    logFromReq(req, 'warn', 'checkout_failed', { event_type: 'ecommerce', reason: 'empty_cart', userId: req.user.sub });
+    return res.status(400).json({ error: 'carrinho vazio' });
+  }
+
+  logFromReq(req, 'info', 'checkout_started', { event_type: 'ecommerce', userId: req.user.sub, items: cart.items.length });
+
+  for (const item of cart.items) {
+    const product = products.get(item.productId);
+    if (!product || product.stock < item.quantity) {
+      checkoutFailuresTotal.inc({ reason: 'stock_changed' });
+      logFromReq(req, 'error', 'checkout_failed', {
+        event_type: 'ecommerce',
+        reason: 'stock_changed',
+        productId: item.productId,
+        requested: item.quantity,
+        available: product?.stock ?? 0,
+      });
+      return res.status(409).json({ error: 'estoque insuficiente', productId: item.productId });
+    }
+  }
+
+  if (instabilityMode && Math.random() > 0.6) {
+    const delay = 2000 + Math.random() * 3000;
+    await new Promise((r) => setTimeout(r, delay));
+    checkoutFailuresTotal.inc({ reason: 'checkout_timeout' });
+    applicationErrorsTotal.inc({ route: '/orders', type: 'timeout' });
+    logFromReq(req, 'error', 'checkout_timeout', { event_type: 'ecommerce', delay_ms: delay });
+    return res.status(504).json({ error: 'timeout no checkout' });
+  }
+
+  try {
+    for (const item of cart.items) {
+      products.get(item.productId).stock -= item.quantity;
+    }
+    await persistProducts();
+
+    const total = cartTotal(cart);
+    const order = {
+      id: uuidv4(),
+      userId: req.user.sub,
+      items: cart.items.map((i) => ({ ...i })),
+      total,
+      status: 'confirmed',
+      paymentStatus: 'paid',
+      createdAt: new Date().toISOString(),
+    };
+    orders.push(order);
+    carts.set(req.user.sub, { items: [] });
+
+    await persistOrders();
+    await persistCarts();
+
+    ordersCreatedTotal.inc({ status: 'confirmed' });
+    orderValueReais.observe(total);
+
+    logFromReq(req, 'info', 'order_created', {
+      event_type: 'ecommerce',
+      orderId: order.id,
+      userId: req.user.sub,
+      total,
+      itemCount: order.items.length,
+    });
+
+    res.status(201).json({
+      id: order.id,
+      total: order.total,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      items: order.items,
+      createdAt: order.createdAt,
+    });
+  } catch (err) {
+    checkoutFailuresTotal.inc({ reason: 'server_error' });
+    applicationErrorsTotal.inc({ route: '/orders', type: 'unhandled' });
+    logFromReq(req, 'error', 'checkout_failed', { event_type: 'ecommerce', reason: 'server_error', error: err.message });
+    res.status(500).json({ error: 'falha no checkout' });
+  }
+});
+
+app.get('/orders', authMiddleware, (req, res) => {
+  const userOrders = orders
+    .filter((o) => o.userId === req.user.sub)
+    .map(({ id, total, status, paymentStatus, createdAt, items }) => ({
+      id, total, status, paymentStatus, createdAt, itemCount: items.length,
+    }));
+  logFromReq(req, 'info', 'orders_listed', { event_type: 'ecommerce', userId: req.user.sub, count: userOrders.length });
+  res.json(userOrders);
+});
+
+app.get('/orders/:id', authMiddleware, (req, res) => {
+  const order = orders.find((o) => o.id === req.params.id && o.userId === req.user.sub);
+  if (!order) {
+    return res.status(404).json({ error: 'pedido não encontrado' });
+  }
+  logFromReq(req, 'info', 'order_viewed', { event_type: 'ecommerce', orderId: order.id });
+  res.json(order);
+});
+
 //simulação de incidentes
+app.post('/incidents/payment-storm/start', (req, res) => {
+  paymentStormActive = true;
+  logFromReq(req, 'warn', 'incident_started', { event_type: 'incident', incident: 'payment_storm' });
+  res.json({ message: 'Checkout retornará HTTP 500 (falha de pagamento simulada)' });
+  setTimeout(() => {
+    paymentStormActive = false;
+    log('info', 'incident_stopped', { event_type: 'incident', incident: 'payment_storm' });
+  }, 120_000);
+});
+
+app.post('/incidents/payment-storm/stop', (req, res) => {
+  paymentStormActive = false;
+  logFromReq(req, 'info', 'incident_stopped', { event_type: 'incident', incident: 'payment_storm', manual: true });
+  res.json({ message: 'Tempestade de pagamento desativada' });
+});
+
 app.post('/incidents/error-storm/start', (req, res) => {
   const count = Math.min(Number(req.body?.count) || 50, 500);
   errorStormActive = true;
@@ -535,11 +898,26 @@ app.use((err, req, res, _next) => {
 });
 
 (async () => {
-  const count = await loadUsersFromFile();
+  const userCount = await loadUsersFromFile();
+  const productCount = await loadProductsFromFile();
+  const orderCount = await loadOrdersFromFile();
+  await loadCartsFromFile();
   syncUsersGauge();
-  log('info', 'users_loaded', { event_type: 'system', count, file: USERS_FILE });
+  syncEcommerceGauges();
+  log('info', 'data_loaded', {
+    event_type: 'system',
+    users: userCount,
+    products: productCount,
+    orders: orderCount,
+    dataDir: DATA_DIR,
+  });
 
   app.listen(PORT, () => {
-    log('info', 'system_startup', { event_type: 'system', port: PORT, nodeVersion: process.version });
+    log('info', 'system_startup', {
+      event_type: 'system',
+      domain: 'ecommerce',
+      port: PORT,
+      nodeVersion: process.version,
+    });
   });
 })();

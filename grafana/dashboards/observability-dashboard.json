@@ -989,6 +989,99 @@
       ],
       "title": "Logs de Negócio (auth, crud, security, incident)",
       "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
+      "id": 500,
+      "panels": [],
+      "title": "E-COMMERCE — Negócio",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 59 },
+      "id": 501,
+      "targets": [
+        {
+          "expr": "sum(rate(orders_created_total[5m]))",
+          "legendFormat": "pedidos/min",
+          "refId": "A"
+        }
+      ],
+      "title": "Pedidos Criados",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 59 },
+      "id": 502,
+      "targets": [
+        {
+          "expr": "sum(rate(checkout_failures_total[5m])) by (reason)",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Falhas no Checkout",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyBRL" } },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 59 },
+      "id": 503,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(order_value_reais_bucket[5m])) by (le))",
+          "legendFormat": "valor mediano",
+          "refId": "A"
+        }
+      ],
+      "title": "Valor Mediano do Pedido (R$)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 59 },
+      "id": 504,
+      "targets": [
+        {
+          "expr": "active_carts_total",
+          "legendFormat": "carrinhos ativos",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(cart_additions_total[5m]))",
+          "legendFormat": "add/min",
+          "refId": "B"
+        }
+      ],
+      "title": "Carrinhos Ativos e Adições",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 66 },
+      "id": 505,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"api|observability-api\"} | json | event_type=\"ecommerce\" | line_format \"{{.request_id}} | {{.level}} | {{.message}} | order={{.orderId}} total={{.total}}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs E-commerce (carrinho, checkout, pedidos)",
+      "type": "logs"
     }
   ],
   "refresh": "10s",
@@ -1007,7 +1100,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Observabilidade — API Node.js",
+  "title": "Observabilidade — E-commerce API",
   "uid": "obs-node-api",
-  "version": 3
+  "version": 4
 }
