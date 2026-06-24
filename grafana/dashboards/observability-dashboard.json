@@ -438,7 +438,7 @@
       "id": 4,
       "targets": [
         {
-          "expr": "sum(count_over_time({service=~\"api|observability-api\"} | json [1m]))",
+          "expr": "sum(count_over_time({service=\"ecommerce-api\"} | json [1m]))",
           "legendFormat": "Logs/min",
           "refId": "A"
         }
@@ -469,7 +469,7 @@
       },
       "targets": [
         {
-          "expr": "{service=~\"api|observability-api\"} | json | line_format \"{{.timestamp}} | {{.request_id}} | {{.level}} | {{.event_type}} | {{.message}} | {{.method}} {{.path}} {{.status}}\"",
+          "expr": "{service=\"ecommerce-api\"} | json | line_format \"{{.timestamp}} | {{.request_id}} | {{.level}} | {{.event_type}} | {{.message}} | {{.method}} {{.path}} {{.status}}\"",
           "refId": "A"
         }
       ],
@@ -829,7 +829,7 @@
       },
       "targets": [
         {
-          "expr": "sum(count_over_time({service=~\"api|observability-api\"} |= \"error\" [1m]))",
+          "expr": "sum(count_over_time({service=\"ecommerce-api\"} |= \"error\" [1m]))",
           "legendFormat": "Logs de erro/min",
           "refId": "A"
         }
@@ -947,7 +947,7 @@
       "id": 406,
       "targets": [
         {
-          "expr": "sum by (level) (count_over_time({service=~\"api|observability-api\"} | json [1m]))",
+          "expr": "sum by (level) (count_over_time({service=\"ecommerce-api\"} | json [1m]))",
           "legendFormat": "{{level}}",
           "refId": "A"
         }
@@ -962,7 +962,7 @@
       "id": 407,
       "targets": [
         {
-          "expr": "sum by (event_type) (count_over_time({service=~\"api|observability-api\"} | json [1m]))",
+          "expr": "sum by (event_type) (count_over_time({service=\"ecommerce-api\"} | json [1m]))",
           "legendFormat": "{{event_type}}",
           "refId": "A"
         }
@@ -983,7 +983,7 @@
       },
       "targets": [
         {
-          "expr": "{service=~\"api|observability-api\", event_type=~\"auth|crud|security|incident\"} | json | line_format \"{{.request_id}} | {{.level}} | {{.event_type}} | {{.message}}\"",
+          "expr": "{service=\"ecommerce-api\", event_type=~\"auth|crud|security|incident\"} | json | line_format \"{{.request_id}} | {{.level}} | {{.event_type}} | {{.message}}\"",
           "refId": "A"
         }
       ],
@@ -1166,7 +1166,7 @@
       },
       "targets": [
         {
-          "expr": "{service=~\"api|observability-api\"} | json | event_type=\"ecommerce\" | line_format \"{{.request_id}} | {{.level}} | {{.message}} | order={{.orderId}} total={{.total}}\"",
+          "expr": "{service=\"ecommerce-api\"} | json | event_type=\"ecommerce\" | line_format \"{{.request_id}} | {{.level}} | {{.message}} | order={{.orderId}} total={{.total}}\"",
           "refId": "A"
         }
       ],
@@ -1192,5 +1192,5 @@
   "timezone": "browser",
   "title": "Observabilidade — E-commerce API",
   "uid": "obs-node-api",
-  "version": 6
+  "version": 7
 }
