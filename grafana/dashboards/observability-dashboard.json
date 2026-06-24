@@ -995,24 +995,35 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
       "id": 600,
       "panels": [],
-      "title": "SIMULAÇÃO — Botões (clique no link e atualize o dashboard)",
+      "title": "SIMULAÇÃO — Demonstração ao vivo",
       "type": "row"
     },
     {
       "type": "text",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 59 },
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 59 },
       "id": 601,
       "options": {
         "mode": "markdown",
-        "content": "### Demonstração ao vivo — E-commerce\n\n| Simulação | Ação |\n|-----------|------|\n| **Força bruta no login** | [Executar](http://localhost:3000/simulate/brute-force?count=30) |\n| **Compras realizadas** | [Executar](http://localhost:3000/simulate/checkout-success?count=3) |\n| **Pedidos em aberto** | [Executar](http://localhost:3000/simulate/pending-orders?count=5) |\n| **Usuários online** | [Executar](http://localhost:3000/simulate/users-online?count=8) |\n| **Falha de pagamento ON** | [Ativar](http://localhost:3000/simulate/payment-storm/start) |\n| **Falha de pagamento OFF** | [Desativar](http://localhost:3000/simulate/payment-storm/stop) |\n\n> Após clicar, aguarde 5–10s e clique em **Refresh** no dashboard."
+        "content": "Clique em um botão abaixo, aguarde **5–10 segundos** e atualize o dashboard com **Refresh**."
       },
-      "title": "Painel de Simulação",
+      "title": "",
       "transparent": true
+    },
+    {
+      "type": "text",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 61 },
+      "id": 608,
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:stretch;padding:6px 8px 2px;\"><a href=\"http://localhost:3000/simulate/brute-force?count=30\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#f79520,#d95f00);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Segurança</span><span style=\"font-size:15px;\">Força Bruta</span></a><a href=\"http://localhost:3000/simulate/checkout-success?count=3\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#56c271,#2a9d4b);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Vendas</span><span style=\"font-size:15px;\">Compras OK</span></a><a href=\"http://localhost:3000/simulate/pending-orders?count=5\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#5794f2,#3274d9);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Pedidos</span><span style=\"font-size:15px;\">Em Aberto</span></a><a href=\"http://localhost:3000/simulate/users-online?count=8\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#8e7cc3,#6b5b95);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Usuários</span><span style=\"font-size:15px;\">Online</span></a><a href=\"http://localhost:3000/simulate/payment-storm/start\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#f2495c,#c4162a);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Pagamento</span><span style=\"font-size:15px;\">Falha ON</span></a><a href=\"http://localhost:3000/simulate/payment-storm/stop\" target=\"_blank\" rel=\"noopener\" style=\"flex:1 1 150px;max-width:220px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:12px 14px;background:linear-gradient(180deg,#6c757d,#495057);color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);\"><span style=\"font-size:11px;opacity:.9;text-transform:uppercase;letter-spacing:.04em;\">Pagamento</span><span style=\"font-size:15px;\">Falha OFF</span></a></div>"
+      },
+      "title": "Ações de Simulação",
+      "transparent": false
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 66 },
       "id": 602,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "users_online_total", "refId": "A" }],
@@ -1022,7 +1033,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 66 },
       "id": 603,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "orders_pending_total", "refId": "A" }],
@@ -1032,7 +1043,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 66 },
       "id": 604,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "payments_successful_total", "refId": "A" }],
@@ -1042,7 +1053,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": null }] } } },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 66 },
       "id": 605,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "sum(payments_failed_total)", "refId": "A" }],
@@ -1052,7 +1063,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] } } },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 66 },
       "id": 606,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "brute_force_attempts_total", "refId": "A" }],
@@ -1062,7 +1073,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 64 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 66 },
       "id": 607,
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [{ "expr": "sum(orders_created_total)", "refId": "A" }],
@@ -1071,7 +1082,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 68 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 70 },
       "id": 500,
       "panels": [],
       "title": "E-COMMERCE — Negócio",
@@ -1080,7 +1091,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 69 },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 71 },
       "id": 501,
       "targets": [
         {
@@ -1095,7 +1106,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 69 },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 71 },
       "id": 502,
       "targets": [
         {
@@ -1110,7 +1121,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "currencyBRL" } },
-      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 69 },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 71 },
       "id": 503,
       "targets": [
         {
@@ -1125,7 +1136,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 69 },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 71 },
       "id": 504,
       "targets": [
         {
@@ -1144,7 +1155,7 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 76 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 78 },
       "id": 505,
       "options": {
         "dedupStrategy": "none",
@@ -1181,5 +1192,5 @@
   "timezone": "browser",
   "title": "Observabilidade — E-commerce API",
   "uid": "obs-node-api",
-  "version": 5
+  "version": 6
 }
