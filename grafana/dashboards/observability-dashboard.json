@@ -993,6 +993,85 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 },
+      "id": 600,
+      "panels": [],
+      "title": "SIMULAÇÃO — Botões (clique no link e atualize o dashboard)",
+      "type": "row"
+    },
+    {
+      "type": "text",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 59 },
+      "id": 601,
+      "options": {
+        "mode": "markdown",
+        "content": "### Demonstração ao vivo — E-commerce\n\n| Simulação | Ação |\n|-----------|------|\n| **Força bruta no login** | [Executar](http://localhost:3000/simulate/brute-force?count=30) |\n| **Compras realizadas** | [Executar](http://localhost:3000/simulate/checkout-success?count=3) |\n| **Pedidos em aberto** | [Executar](http://localhost:3000/simulate/pending-orders?count=5) |\n| **Usuários online** | [Executar](http://localhost:3000/simulate/users-online?count=8) |\n| **Falha de pagamento ON** | [Ativar](http://localhost:3000/simulate/payment-storm/start) |\n| **Falha de pagamento OFF** | [Desativar](http://localhost:3000/simulate/payment-storm/stop) |\n\n> Após clicar, aguarde 5–10s e clique em **Refresh** no dashboard."
+      },
+      "title": "Painel de Simulação",
+      "transparent": true
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 64 },
+      "id": 602,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "users_online_total", "refId": "A" }],
+      "title": "Usuários Online",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 64 },
+      "id": 603,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "orders_pending_total", "refId": "A" }],
+      "title": "Pedidos em Aberto",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 64 },
+      "id": 604,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "payments_successful_total", "refId": "A" }],
+      "title": "Pagamentos OK",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 64 },
+      "id": 605,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(payments_failed_total)", "refId": "A" }],
+      "title": "Pagamentos Falhos",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 64 },
+      "id": 606,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "brute_force_attempts_total", "refId": "A" }],
+      "title": "Força Bruta",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 64 },
+      "id": 607,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(orders_created_total)", "refId": "A" }],
+      "title": "Compras Realizadas",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 68 },
       "id": 500,
       "panels": [],
       "title": "E-COMMERCE — Negócio",
@@ -1001,7 +1080,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 59 },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 69 },
       "id": 501,
       "targets": [
         {
@@ -1016,7 +1095,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 59 },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 69 },
       "id": 502,
       "targets": [
         {
@@ -1031,7 +1110,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "currencyBRL" } },
-      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 59 },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 69 },
       "id": 503,
       "targets": [
         {
@@ -1046,7 +1125,7 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 59 },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 69 },
       "id": 504,
       "targets": [
         {
@@ -1065,7 +1144,7 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 66 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 76 },
       "id": 505,
       "options": {
         "dedupStrategy": "none",
@@ -1102,5 +1181,5 @@
   "timezone": "browser",
   "title": "Observabilidade — E-commerce API",
   "uid": "obs-node-api",
-  "version": 4
+  "version": 5
 }

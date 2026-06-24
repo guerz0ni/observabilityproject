@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências da API
+        working-directory: app
+        run: npm install --omit=dev
+
+      - name: Validar sintaxe da API
+        run: node --check app/app.js
+
+      - name: Build imagem Docker
+        run: docker compose build api

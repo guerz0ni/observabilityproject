@@ -150,12 +150,63 @@ const productsStockGauge = new client.Gauge({
   registers: [register],
 });
 
+const usersOnlineTotal = new client.Gauge({
+  name: 'users_online_total',
+  help: 'Usuários ativos nos últimos 5 minutos',
+  registers: [register],
+});
+
+const ordersPendingTotal = new client.Gauge({
+  name: 'orders_pending_total',
+  help: 'Pedidos aguardando pagamento',
+  registers: [register],
+});
+
+const paymentsSuccessfulTotal = new client.Counter({
+  name: 'payments_successful_total',
+  help: 'Pagamentos efetivados com sucesso',
+  registers: [register],
+});
+
+const paymentsFailedTotal = new client.Counter({
+  name: 'payments_failed_total',
+  help: 'Pagamentos com falha',
+  labelNames: ['reason'],
+  registers: [register],
+});
+
+const bruteForceAttemptsTotal = new client.Counter({
+  name: 'brute_force_attempts_total',
+  help: 'Tentativas de login por força bruta',
+  registers: [register],
+});
+
 serviceUp.set(1);
 
 const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS) || 1000;
+const ONLINE_TTL_MS = 5 * 60 * 1000;
+const onlineUsers = new Map();
 
 function syncUsersGauge() {
   registeredUsersTotal.set(users.size);
+}
+
+function touchUserOnline(userId) {
+  if (userId) onlineUsers.set(userId, Date.now());
+}
+
+function syncUsersOnlineGauge() {
+  const now = Date.now();
+  let count = 0;
+  for (const [id, ts] of onlineUsers.entries()) {
+    if (now - ts < ONLINE_TTL_MS) count++;
+    else onlineUsers.delete(id);
+  }
+  usersOnlineTotal.set(count);
+}
+
+function syncOrdersPendingGauge() {
+  ordersPendingTotal.set(orders.filter((o) => o.status === 'pending').length);
 }
 
 // Logs estruturados com correlação (requestId) e categorização (event_type)
@@ -418,13 +469,22 @@ app.get('/health', (_req, res) => {
   for (const cart of carts.values()) {
     if (cart.items?.length > 0) activeCarts += 1;
   }
+  syncUsersOnlineGauge();
+  syncOrdersPendingGauge();
+  let onlineCount = 0;
+  const now = Date.now();
+  for (const [, ts] of onlineUsers.entries()) {
+    if (now - ts < ONLINE_TTL_MS) onlineCount++;
+  }
   res.json({
     status: 'ok',
     domain: 'ecommerce',
     uptime: process.uptime(),
     users: users.size,
+    users_online: onlineCount,
     products: products.size,
     orders: orders.length,
+    orders_pending: orders.filter((o) => o.status === 'pending').length,
     active_carts: activeCarts,
     requests_in_flight: requestsInFlightCount,
   });
@@ -516,6 +576,8 @@ app.post('/login', async (req, res) => {
 
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
     authAttemptsTotal.inc({ action: 'login', result: 'success', reason: 'none' });
+    touchUserOnline(user.id);
+    syncUsersOnlineGauge();
     logFromReq(req, 'info', 'login_success', { event_type: 'auth', userId: user.id, email });
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
@@ -536,6 +598,8 @@ function authMiddleware(req, res, next) {
   }
   try {
     req.user = jwt.verify(header.slice(7), JWT_SECRET);
+    touchUserOnline(req.user.sub);
+    syncUsersOnlineGauge();
     next();
   } catch {
     authAttemptsTotal.inc({ action: 'token', result: 'failure', reason: 'invalid' });
@@ -683,13 +747,6 @@ app.delete('/cart', authMiddleware, async (req, res) => {
 app.post('/orders', authMiddleware, async (req, res) => {
   const cart = getCart(req.user.sub);
 
-  if (paymentStormActive) {
-    checkoutFailuresTotal.inc({ reason: 'payment_storm' });
-    applicationErrorsTotal.inc({ route: '/orders', type: 'payment_storm' });
-    logFromReq(req, 'error', 'checkout_failed', { event_type: 'ecommerce', reason: 'payment_storm', userId: req.user.sub });
-    return res.status(500).json({ error: 'falha simulada no pagamento' });
-  }
-
   if (!cart.items.length) {
     checkoutFailuresTotal.inc({ reason: 'empty_cart' });
     logFromReq(req, 'warn', 'checkout_failed', { event_type: 'ecommerce', reason: 'empty_cart', userId: req.user.sub });
@@ -734,18 +791,43 @@ app.post('/orders', authMiddleware, async (req, res) => {
       userId: req.user.sub,
       items: cart.items.map((i) => ({ ...i })),
       total,
-      status: 'confirmed',
-      paymentStatus: 'paid',
+      status: 'pending',
+      paymentStatus: 'processing',
       createdAt: new Date().toISOString(),
     };
     orders.push(order);
     carts.set(req.user.sub, { items: [] });
-
     await persistOrders();
     await persistCarts();
+    syncOrdersPendingGauge();
 
+    logFromReq(req, 'info', 'order_pending_created', {
+      event_type: 'ecommerce',
+      orderId: order.id,
+      userId: req.user.sub,
+      total,
+    });
+
+    if (paymentStormActive) {
+      order.status = 'payment_failed';
+      order.paymentStatus = 'failed';
+      paymentsFailedTotal.inc({ reason: 'payment_storm' });
+      checkoutFailuresTotal.inc({ reason: 'payment_storm' });
+      applicationErrorsTotal.inc({ route: '/orders', type: 'payment_storm' });
+      syncOrdersPendingGauge();
+      await persistOrders();
+      logFromReq(req, 'error', 'payment_failed', { event_type: 'ecommerce', orderId: order.id, reason: 'payment_storm' });
+      return res.status(500).json({ error: 'falha simulada no pagamento', orderId: order.id });
+    }
+
+    await new Promise((r) => setTimeout(r, 80));
+    order.status = 'confirmed';
+    order.paymentStatus = 'paid';
     ordersCreatedTotal.inc({ status: 'confirmed' });
+    paymentsSuccessfulTotal.inc();
     orderValueReais.observe(total);
+    syncOrdersPendingGauge();
+    await persistOrders();
 
     logFromReq(req, 'info', 'order_created', {
       event_type: 'ecommerce',
@@ -753,6 +835,11 @@ app.post('/orders', authMiddleware, async (req, res) => {
       userId: req.user.sub,
       total,
       itemCount: order.items.length,
+    });
+    logFromReq(req, 'info', 'payment_successful', {
+      event_type: 'ecommerce',
+      orderId: order.id,
+      total,
     });
 
     res.status(201).json({
@@ -788,6 +875,144 @@ app.get('/orders/:id', authMiddleware, (req, res) => {
   }
   logFromReq(req, 'info', 'order_viewed', { event_type: 'ecommerce', orderId: order.id });
   res.json(order);
+});
+
+// Confirmar pagamento de pedido pendente
+app.post('/orders/:id/confirm', authMiddleware, async (req, res) => {
+  const order = orders.find((o) => o.id === req.params.id && o.userId === req.user.sub);
+  if (!order) return res.status(404).json({ error: 'pedido não encontrado' });
+  if (order.status !== 'pending') return res.status(409).json({ error: 'pedido não está pendente' });
+
+  if (paymentStormActive) {
+    order.status = 'payment_failed';
+    order.paymentStatus = 'failed';
+    paymentsFailedTotal.inc({ reason: 'payment_storm' });
+    syncOrdersPendingGauge();
+    logFromReq(req, 'error', 'payment_failed', { event_type: 'ecommerce', orderId: order.id });
+    return res.status(500).json({ error: 'falha no pagamento' });
+  }
+
+  order.status = 'confirmed';
+  order.paymentStatus = 'paid';
+  ordersCreatedTotal.inc({ status: 'confirmed' });
+  paymentsSuccessfulTotal.inc();
+  orderValueReais.observe(order.total);
+  syncOrdersPendingGauge();
+  await persistOrders();
+  logFromReq(req, 'info', 'payment_successful', { event_type: 'ecommerce', orderId: order.id, total: order.total });
+  res.json(order);
+});
+
+// --- Simulação (rotas GET para botões no Grafana) ---
+async function internalRegisterLogin(suffix) {
+  const email = `sim${suffix}@loja.com`;
+  if (!users.has(email)) {
+    const hash = await bcrypt.hash('senha123', 10);
+    const user = {
+      id: uuidv4(),
+      email,
+      name: `Sim ${suffix}`,
+      passwordHash: hash,
+      createdAt: new Date().toISOString(),
+    };
+    users.set(email, user);
+    await persistUsersToFile();
+    syncUsersGauge();
+  }
+  const user = users.get(email);
+  touchUserOnline(user.id);
+  syncUsersOnlineGauge();
+  const token = jwt.sign({ sub: user.id, email }, JWT_SECRET, { expiresIn: '1h' });
+  return { user, token };
+}
+
+app.get('/simulate/brute-force', async (req, res) => {
+  const count = Math.min(Number(req.query.count) || 30, 100);
+  for (let i = 0; i < count; i++) {
+    bruteForceAttemptsTotal.inc();
+    authAttemptsTotal.inc({ action: 'login', result: 'failure', reason: 'brute_force' });
+    loginErrorsTotal.inc({ reason: 'brute_force' });
+    try {
+      await fetch(`http://127.0.0.1:${PORT}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `attacker${i}@hack.com`, password: 'wrong' }),
+      });
+    } catch { /* ignore */ }
+  }
+  logFromReq(req, 'warn', 'brute_force_simulated', { event_type: 'security', count });
+  res.json({ message: `Simuladas ${count} tentativas de força bruta`, metric: 'brute_force_attempts_total' });
+});
+
+app.get('/simulate/checkout-success', async (req, res) => {
+  const count = Math.min(Number(req.query.count) || 3, 10);
+  const results = [];
+  for (let i = 0; i < count; i++) {
+    const { token } = await internalRegisterLogin(`${Date.now()}${i}`);
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    await fetch(`http://127.0.0.1:${PORT}/cart/items`, {
+      method: 'POST', headers, body: JSON.stringify({ productId: 'p2', quantity: 1 }),
+    });
+    const r = await fetch(`http://127.0.0.1:${PORT}/orders`, { method: 'POST', headers });
+    results.push(r.status);
+  }
+  logFromReq(req, 'info', 'checkout_success_simulated', { event_type: 'ecommerce', count });
+  res.json({ message: `Simuladas ${count} compras`, statuses: results });
+});
+
+app.get('/simulate/pending-orders', async (req, res) => {
+  const count = Math.min(Number(req.query.count) || 5, 15);
+  const created = [];
+  for (let i = 0; i < count; i++) {
+    const { user } = await internalRegisterLogin(`pending${Date.now()}${i}`);
+    const product = products.get('p2');
+    if (!product || product.stock < 1) break;
+    product.stock -= 1;
+    const order = {
+      id: uuidv4(),
+      userId: user.id,
+      items: [{ productId: 'p2', name: product.name, price: product.price, quantity: 1 }],
+      total: product.price,
+      status: 'pending',
+      paymentStatus: 'awaiting',
+      createdAt: new Date().toISOString(),
+    };
+    orders.push(order);
+    created.push(order.id);
+  }
+  await persistProducts();
+  await persistOrders();
+  syncOrdersPendingGauge();
+  logFromReq(req, 'info', 'pending_orders_simulated', { event_type: 'ecommerce', count: created.length });
+  res.json({ message: `Criados ${created.length} pedidos em aberto`, orderIds: created });
+});
+
+app.get('/simulate/users-online', async (req, res) => {
+  const count = Math.min(Number(req.query.count) || 8, 25);
+  for (let i = 0; i < count; i++) {
+    await internalRegisterLogin(`online${Date.now()}${i}`);
+  }
+  syncUsersOnlineGauge();
+  let onlineCount = 0;
+  const now = Date.now();
+  for (const [, ts] of onlineUsers.entries()) {
+    if (now - ts < ONLINE_TTL_MS) onlineCount++;
+  }
+  logFromReq(req, 'info', 'users_online_simulated', { event_type: 'auth', count });
+  res.json({ message: `${count} usuários marcados como online`, users_online: onlineCount });
+});
+
+app.get('/simulate/payment-storm/start', (req, res) => {
+  paymentStormActive = true;
+  logFromReq(req, 'warn', 'incident_started', { event_type: 'incident', incident: 'payment_storm' });
+  res.json({ message: 'Pagamentos falharão (HTTP 500) por 2 minutos' });
+  setTimeout(() => { paymentStormActive = false; }, 120_000);
+});
+
+app.get('/simulate/payment-storm/stop', (req, res) => {
+  paymentStormActive = false;
+  logFromReq(req, 'info', 'incident_stopped', { event_type: 'incident', incident: 'payment_storm' });
+  res.json({ message: 'Tempestade de pagamento desativada' });
 });
 
 //simulação de incidentes
@@ -904,6 +1129,8 @@ app.use((err, req, res, _next) => {
   await loadCartsFromFile();
   syncUsersGauge();
   syncEcommerceGauges();
+  syncOrdersPendingGauge();
+  syncUsersOnlineGauge();
   log('info', 'data_loaded', {
     event_type: 'system',
     users: userCount,
